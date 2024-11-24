@@ -4,18 +4,120 @@ const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
-const print = std.debug.print;
 
-var pass_action: sg.PassAction = .{};
+const shd = @import("shader.glsl.zig");
+
+
+const print = std.debug.print;
+const native_endian = @import("builtin").target.cpu.arch.endian();
+
+const window_width = 1280;
+const window_height = 960;
+const background_color = makeColorRGBA8(0x181818ff);
+
+
+const state = struct {
+    var pass_action: sg.PassAction = .{};
+    var pip: sg.Pipeline = .{};
+    var bind: sg.Bindings = .{};
+    var pixel_buffer = std.mem.zeroes([window_width * window_height]u32);
+};
+
 
 export fn init() void {
-    sg.setup(.{ .environment = sglue.environment(), .logger = .{ .func = slog.func } });
-    pass_action.colors[0] = .{ .load_action = .CLEAR, .clear_value = .{ .r = 1, .g = 1, .b = 0, .a = 1 } };
-    print("Backend: {}\n", .{sg.queryBackend()});
+    sg.setup(.{ 
+        .environment = sglue.environment(), 
+        .logger = .{ .func = slog.func } 
+    });
+
+
+    // Vertex Buffer
+    const vertices = [_]f32 {
+        // positions    // uvs
+        -1.0,  1.0, 0.0, 0.0, 0.0,
+        1.0,   1.0, 0.0, 1.0, 0.0,
+        1.0,  -1.0, 0.0, 1.0, 1.0,
+        -1.0, -1.0, 0.0, 0.0, 1.0,
+    };
+    state.bind.vertex_buffers[0] = sg.makeBuffer(.{
+        .data = sg.asRange(&vertices)
+    });
+
+    // Index Buffer
+    const indices = [_]u16 { 0, 1, 2, 0, 2, 3 };
+    state.bind.index_buffer = sg.makeBuffer(.{
+        .type = .INDEXBUFFER,
+        .data = sg.asRange(&indices)
+    });
+
+    // Image which can be dynamically updated
+    const image = sg.makeImage(.{
+        .width = window_width,
+        .height = window_height,
+        .pixel_format = .RGBA8,
+        .sample_count = 1,
+        .usage = .STREAM
+    });
+    state.bind.images[shd.IMG_tex] = image;
+
+    // Sampler object
+    const sampler = sg.makeSampler(.{
+        .min_filter = .NEAREST,
+        .mag_filter = .NEAREST,
+        .wrap_u = .CLAMP_TO_EDGE,
+        .wrap_v = .CLAMP_TO_EDGE
+    });
+    state.bind.samplers[shd.SMP_smp] = sampler;
+
+    // Shader and Pipeline object
+    var pip_desc: sg.PipelineDesc = .{
+        .shader = sg.makeShader(shd.quadShaderDesc(sg.queryBackend())),
+        .index_type = .UINT16,
+    };
+
+    pip_desc.layout.attrs[shd.ATTR_quad_position] = .{ .format = .FLOAT3 };
+    pip_desc.layout.attrs[shd.ATTR_quad_texcoord0] = .{ .format = .FLOAT2 };
+
+    state.pip = sg.makePipeline(pip_desc);
+
+    // Default Pass Action
+    state.pass_action.colors[0] = .{
+        .load_action = .CLEAR,
+        .clear_value = .{ .r = 0, .g = 0, .b = 0, .a = 1}
+    };
+}
+
+fn makeColorRGBA8(color: u32) u32 {
+    switch (native_endian) {
+        .little => {
+            const red: u8 = @truncate(color >> 24);
+            const green: u8 = @truncate(color >> 16);
+            const blue: u8 = @truncate(color >> 8);
+            const alpha: u8 = @truncate(color);
+            const new_color: u32 = @as(u32, alpha) << 24 | @as(u32, blue) << 16 | @as(u32, green) << 8 | @as(u32, red);
+            return new_color;
+        },
+        else  => {
+            return color;
+        }
+    }
+}
+
+
+fn clearColorBuffer(color: u32) void {
+    @memset(&state.pixel_buffer, color);
 }
 
 export fn frame() void {
-    sg.beginPass(.{ .action = pass_action, .swapchain = sglue.swapchain() });
+    clearColorBuffer(background_color);
+
+    var image_data: sg.ImageData = .{};
+    image_data.subimage[0][0] = sg.asRange(&state.pixel_buffer);
+    sg.updateImage(state.bind.images[shd.IMG_tex], image_data);
+    sg.beginPass(.{ .action = state.pass_action, .swapchain = sglue.swapchain() });
+    sg.applyPipeline(state.pip);
+    sg.applyBindings(state.bind);
+    sg.draw(0, 6, 1);
     sg.endPass();
     sg.commit();
 }
@@ -25,5 +127,15 @@ export fn cleanup() void {
 }
 
 pub fn main() void {
-    sapp.run(.{ .init_cb = init, .frame_cb = frame, .cleanup_cb = cleanup, .width = 640, .height = 480, .icon = .{ .sokol_default = true }, .window_title = "Zig Game of Life", .logger = .{ .func = slog.func }, .win32_console_attach = true });
+    sapp.run(.{ 
+        .init_cb = init, 
+        .frame_cb = frame, 
+        .cleanup_cb = cleanup, 
+        .width = window_width, 
+        .height = window_height, 
+        .icon = .{ .sokol_default = true }, 
+        .window_title = "Zig Game of Life", 
+        .logger = .{ .func = slog.func }, 
+        .win32_console_attach = true 
+    });
 }
