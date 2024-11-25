@@ -16,7 +16,7 @@ const window_height = 960;
 const cell_size: u32 = 32;
 const num_cells_x: usize = window_width / cell_size;
 const num_cells_y: usize = window_height / cell_size;
-const num_total_cells = num_cells_x * num_cells_y;
+const num_cells = num_cells_x * num_cells_y;
 
 const background_color = makeColorRGBA8(0x96a6c8ff);
 const foreground_color = makeColorRGBA8(0x181818ff);
@@ -28,13 +28,21 @@ const CellState = enum {
     alive
 };
 
+const GameState = enum {
+    drawing,
+    running
+};
+
 
 const state = struct {
     var pass_action: sg.PassAction = .{};
     var pip: sg.Pipeline = .{};
     var bind: sg.Bindings = .{};
     var pixel_buffer = std.mem.zeroes([window_width * window_height]u32);
-    var cells: [num_cells_x * num_cells_y]CellState = undefined; 
+    var cells: [num_cells]CellState = undefined; 
+    var event_type: sapp.EventType = undefined;
+    var drawing_index: isize = -1;
+    var game_state: GameState = .drawing;
 };
 
 
@@ -102,8 +110,6 @@ export fn init() void {
 
     // Set initial cell state
     @memset(&state.cells, .dead);
-
-    state.cells[0] = .alive;
 }
 
 fn makeColorRGBA8(color: u32) u32 {
@@ -158,8 +164,124 @@ fn drawCellStates() void {
     }
 }
 
+fn getLivingNeighbours(x: isize) usize {
+    // [ ][ ][ ]
+    // ^top_row_start
+    // [ ][ ][ ]
+    // ^middle_row_start
+    // [ ][ ][ ]
+    // ^bottom_row_start
+
+    const top_row_start: isize = @intCast(x - num_cells_x - 1);
+    const middle_row_start: isize = @intCast(x - 1);
+    const bottom_row_start: isize = @intCast(x + num_cells_x - 1);
+    var num_living_neighbours: usize = 0;
+
+    // Check top row
+    for (0..3) |i| {
+        const index: isize = top_row_start + @as(isize, @intCast(i));
+        const skip = index < 0 or index >= num_cells or index == x;
+        if (skip) {
+            continue;
+        }
+        const cell_state = state.cells[@intCast(index)];
+        if (cell_state == .alive) {
+            num_living_neighbours += 1;
+        }
+    }
+    // Check middle row
+    for (0..3) |i| {
+        const index: isize = middle_row_start + @as(isize, @intCast(i));
+        const skip = index < 0 or index >= num_cells or index == x;
+        if (skip) {
+            continue;
+        }
+        const cell_state = state.cells[@intCast(index)];
+        if (cell_state == .alive) {
+            num_living_neighbours += 1;
+        }
+    }
+    // Check bottom row
+    for (0..3) |i| {
+        const index: isize = bottom_row_start + @as(isize, @intCast(i));
+        const skip = index < 0 or index >= num_cells or index == x;
+        if (skip) {
+            continue;
+        }
+        const cell_state = state.cells[@intCast(index)];
+        if (cell_state == .alive) {
+            num_living_neighbours += 1;
+        }
+    }
+    return num_living_neighbours;
+}
+
+fn applyCellStateRules(cells: [num_cells]CellState) [num_cells]CellState {
+    var new_cells: [num_cells]CellState = undefined;
+    @memset(&new_cells, .dead);
+    for (0.., cells) |index, cell_state| {
+        var new_cell_state: CellState = cell_state;
+        const num_living_neighbours = getLivingNeighbours(@intCast(index));
+        if (cell_state == .alive) {
+            // 1: Any live cell with fewer than two living neighbours dies
+            if (num_living_neighbours < 2) {
+                new_cell_state = .dead;
+            } else if (num_living_neighbours == 2 or num_living_neighbours == 3) {
+                // 2: Any live cell with two or three live neighbours lives.
+                new_cell_state = .alive;
+            } else {
+                // 3: Any live cell with more then three live neighbours dies
+                new_cell_state = .dead;
+            }
+        } else {
+            // 4: Any dead cell with exactly three live neighbours becomes alive
+            if (num_living_neighbours == 3) {
+                new_cell_state = .alive;
+            }
+        }
+        new_cells[index] = new_cell_state;
+    }
+    return new_cells;
+}
+
+export fn event(eptr: [*c]const sapp.Event) void {
+    const e: *const sapp.Event = @ptrCast(eptr);
+    state.event_type = e.type;
+    if (state.event_type == .KEY_UP and e.key_code == .D) {
+        if (state.game_state == .running) {
+            state.game_state = .drawing;
+        }
+        else {
+            state.game_state = .running;
+        }
+    }
+
+    const mouse_x: isize = @intFromFloat(e.mouse_x);
+    const mouse_y: isize = @intFromFloat(e.mouse_y);
+    const cell_x: isize = @divFloor(mouse_x, cell_size);
+    const cell_y: isize  = @divFloor(mouse_y, cell_size);
+    const outOfBounds = cell_x < 0 or cell_x >= num_cells_x or cell_y < 0 or cell_y >= num_cells_y;
+    if (outOfBounds) {
+        state.drawing_index = -1;
+    } else {
+        state.drawing_index = (cell_y * num_cells_x) + cell_x;
+    }
+}
+
 export fn frame() void {
     clearColorBuffer(background_color);
+
+
+    if (state.game_state == .drawing) {
+        if (state.event_type == .MOUSE_DOWN and state.drawing_index != -1) {
+            state.cells[@intCast(state.drawing_index)] = .alive;
+
+        }
+    } else {
+        state.cells = applyCellStateRules(state.cells);
+
+    }
+
     drawCellStates();
 
     var image_data: sg.ImageData = .{};
@@ -180,6 +302,7 @@ export fn cleanup() void {
 pub fn main() void {
     sapp.run(.{ 
         .init_cb = init, 
+        .event_cb = event,
         .frame_cb = frame, 
         .cleanup_cb = cleanup, 
         .width = window_width, 
