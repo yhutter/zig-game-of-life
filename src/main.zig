@@ -264,7 +264,15 @@ fn applyCellStateRules(cells: [num_cells]CellState) [num_cells]CellState {
 }
 
 fn initCellsFromImage() !void {
-    var image = try zstbi.Image.loadFromFile("src/data/sako.png", 1);
+    const exe_path = try std.fs.selfExeDirPathAlloc(state.allocator);
+    defer state.allocator.free(exe_path);
+    const exe_path_dir = std.fs.path.dirname(exe_path).?;
+    const paths = [_][]const u8{exe_path_dir, "bin/data/sako.png"};
+    const image_path = try std.fs.path.join(state.allocator, &paths);
+    defer state.allocator.free(image_path);
+    const image_path_cstr = try state.allocator.dupeZ(u8, image_path);
+    defer state.allocator.free(image_path_cstr);
+    var image = try zstbi.Image.loadFromFile(image_path_cstr, 1);
     defer image.deinit();
 
     const width = image.width;

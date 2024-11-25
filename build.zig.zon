@@ -27,6 +27,10 @@
             .url = "git+https://github.com/floooh/sokol-zig.git#b73d2c51d0cd1efd4e074ec7aae7c0af50125799",
             .hash = "12200f54d3d37b99ecde3987c1fdc744d87b40595cc32e8943db82635498f14c0db0",
         },
+        .zstbi = .{
+            .url = "git+https://github.com/zig-gamedev/zstbi.git#ec86094475a10ba07b141b12b7020f7b88b0e77b",
+            .hash = "122009ea2ff8496071dbe447731a62e6c7c731b6aca5ac3a01992a8d3330d4482a88",
+        },
     },
     .paths = .{
         "build.zig",
