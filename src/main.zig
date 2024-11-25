@@ -13,7 +13,7 @@ const native_endian = @import("builtin").target.cpu.arch.endian();
 
 const window_width = 1280;
 const window_height = 960;
-const cell_size: u32 = 32;
+const cell_size: u32 = 16;
 const num_cells_x: usize = window_width / cell_size;
 const num_cells_y: usize = window_height / cell_size;
 const num_cells = num_cells_x * num_cells_y;
@@ -216,6 +216,16 @@ fn getLivingNeighbours(x: isize) usize {
     return num_living_neighbours;
 }
 
+fn drawGrid() void {
+    for (0..window_height) |y| {
+        for (0..window_width) |x| {
+            if (x % cell_size == 0 or y % cell_size == 0) {
+                drawPixel(x, y, foreground_color);
+            }
+        }
+    }
+}
+
 fn applyCellStateRules(cells: [num_cells]CellState) [num_cells]CellState {
     var new_cells: [num_cells]CellState = undefined;
     @memset(&new_cells, .dead);
@@ -283,6 +293,7 @@ export fn frame() void {
     }
 
     drawCellStates();
+    drawGrid();
 
     var image_data: sg.ImageData = .{};
     image_data.subimage[0][0] = sg.asRange(&state.pixel_buffer);
