@@ -1,9 +1,13 @@
 const std = @import("std");
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
 const sokol = @import("sokol");
 const slog = sokol.log;
 const sg = sokol.gfx;
 const sapp = sokol.app;
 const sglue = sokol.glue;
+
+const zstbi = @import("zstbi"); 
 
 const shd = @import("shader.glsl.zig");
 
@@ -13,7 +17,7 @@ const native_endian = @import("builtin").target.cpu.arch.endian();
 
 const window_width = 1280;
 const window_height = 960;
-const cell_size: u32 = 16;
+const cell_size: u32 = 3;
 const num_cells_x: usize = window_width / cell_size;
 const num_cells_y: usize = window_height / cell_size;
 const num_cells = num_cells_x * num_cells_y;
@@ -43,10 +47,12 @@ const state = struct {
     var event_type: sapp.EventType = undefined;
     var drawing_index: isize = -1;
     var game_state: GameState = .drawing;
+    const allocator = gpa.allocator();
 };
 
 
 export fn init() void {
+    zstbi.init(state.allocator);
     sg.setup(.{ 
         .environment = sglue.environment(), 
         .logger = .{ .func = slog.func } 
@@ -110,6 +116,9 @@ export fn init() void {
 
     // Set initial cell state
     @memset(&state.cells, .dead);
+    initCellsFromImage() catch |err|{
+        print("Failed to initialize from image: {}\n", .{err});
+    };
 }
 
 fn makeColorRGBA8(color: u32) u32 {
@@ -254,6 +263,29 @@ fn applyCellStateRules(cells: [num_cells]CellState) [num_cells]CellState {
     return new_cells;
 }
 
+fn initCellsFromImage() !void {
+    var image = try zstbi.Image.loadFromFile("src/data/sako.png", 1);
+    defer image.deinit();
+
+    const width = image.width;
+    const height = image.height;
+
+    for (0..height) |y| {
+        for (0..width) |x| {
+            const index = (y * width) + x;
+            const cell_index = (y * num_cells_x) + x;
+            const pixel = image.data[index];
+            const cell_state: CellState = switch(pixel) {
+                0 => .alive,
+                else => .dead
+
+            };
+            state.cells[cell_index] = cell_state;
+        }
+    }
+}
+
+
 export fn event(eptr: [*c]const sapp.Event) void {
     const e: *const sapp.Event = @ptrCast(eptr);
     state.event_type = e.type;
@@ -293,7 +325,7 @@ export fn frame() void {
     }
 
     drawCellStates();
-    drawGrid();
+    // drawGrid();
 
     var image_data: sg.ImageData = .{};
     image_data.subimage[0][0] = sg.asRange(&state.pixel_buffer);
@@ -307,6 +339,11 @@ export fn frame() void {
 }
 
 export fn cleanup() void {
+    zstbi.deinit();
+    const deinit_status = gpa.deinit();
+    if (deinit_status == .leak) {
+        print("Memory Leak detected!\n", .{});
+    }
     sg.shutdown();
 }
 
