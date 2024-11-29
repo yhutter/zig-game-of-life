@@ -22,7 +22,7 @@ const num_cells_x: usize = window_width / cell_size;
 const num_cells_y: usize = window_height / cell_size;
 const num_cells = num_cells_x * num_cells_y;
 
-const background_color = makeColorRGBA8(0x96a6c8ff);
+const background_color = makeColorRGBA8(0xb2b2b2ff);
 const foreground_color = makeColorRGBA8(0x181818ff);
 const cell_alive_color = foreground_color; 
 const cell_dead_color = background_color; 

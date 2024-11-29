@@ -15,4 +15,7 @@ In order to build for Windows execute the following command
 zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows
 ```
 
+## Acknowledgments
+The Art was made by `Sako` and can be found [here](https://bsky.app/profile/sako.works/post/3ktqdflzkig2d).
+
 
